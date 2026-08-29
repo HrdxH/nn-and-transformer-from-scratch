@@ -114,3 +114,5 @@
 - `RESULTS.md` maintained as a running experiment log (config -> train/
   test accuracy -> notes) to preserve comparisons across code changes
   that would otherwise overwrite prior results.
+
+  "Implemented single-head attention first to understand the core mechanism, then extended to multi-head attention (4 heads) — multi-head lets the model track multiple types of relationships in parallel (e.g., different attention heads may specialize in different positional relationships relevant to the reversal task)."
