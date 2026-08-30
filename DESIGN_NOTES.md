@@ -116,3 +116,153 @@
   that would otherwise overwrite prior results.
 
   "Implemented single-head attention first to understand the core mechanism, then extended to multi-head attention (4 heads) — multi-head lets the model track multiple types of relationships in parallel (e.g., different attention heads may specialize in different positional relationships relevant to the reversal task)."
+
+  # Design notes — Part B: Transformer from scratch, length generalization
+
+## Research question
+
+Does positional encoding scheme affect a from-scratch transformer's ability
+to generalize to sequences longer than it was trained on, and does this
+depend on how position-dependent the task itself is?
+
+## Why this question, not text generation
+
+Deliberately chose not to replicate a standard "train a small GPT on
+Shakespeare" project. That approach has no clean, quantifiable success
+metric and doesn't produce a comparable, reportable result. Instead framed
+Part B around a real, currently active research question in the literature
+(length generalization in Transformers), using a synthetic task with
+exact-match accuracy as the metric — mirroring the ablation-study structure
+used in Part A, and giving the project a genuine research contribution
+rather than a reproduction of a known demo.
+
+## Architecture
+
+- Built from scratch on top of PyTorch's `nn.Module`/autograd (unlike Part
+  A, which used raw NumPy with hand-written backprop) — implementing
+  attention's backward pass by hand was judged low learning-value relative
+  to time cost; autograd is standard practice for transformer work.
+- Components implemented from scratch: token + positional embeddings,
+  multi-head self-attention (scaled dot-product, Q/K/V projections),
+  feedforward sublayer, residual connections + LayerNorm, stacked
+  transformer blocks.
+- Shared architecture across all experiments and encoding variants:
+  d_model=32, num_heads=4, d_ff=128, num_layers=2, Adam optimizer
+  (lr=0.001) — kept identical across conditions so that any accuracy
+  difference is attributable specifically to the positional encoding
+  scheme, not confounded by architecture size.
+- Refactored shared model classes into `model_utils.py` after Experiment 1,
+  so Experiment 2 (and any future extensions) import architecture code
+  rather than duplicating it across notebooks. Experiment 1's original
+  notebook was left with its inline definitions rather than retroactively
+  refactored, since it was already complete and validated.
+
+## Positional encoding variants implemented
+
+- **Sinusoidal** (Vaswani et al., 2017) — fixed sine/cosine functions of
+  position and embedding dimension, not learned.
+- **Learned positional embeddings** — position treated as another token to
+  be embedded via a trainable lookup table, same mechanism as token
+  embeddings.
+- **NoPE (no positional encoding)** — control condition, token embeddings
+  only, no positional information supplied to the model at all.
+- ALiBi and other relative schemes were considered but not implemented,
+  given time constraints and that the three-way comparison above already
+  produced a clear, reportable contrast — noted here as a natural
+  extension for future work.
+
+## Task design
+
+Two synthetic tasks were used, deliberately chosen to differ in how much
+they depend on token position:
+
+- **Experiment 1 — sequence reversal**: output the input sequence in
+  reverse order. Inherently positional — the correct output at each
+  position depends entirely on where a token sits in the input, not just
+  its identity.
+- **Experiment 2 — counting**: given a sequence and a target digit, output
+  how many times the target appears. Deliberately chosen as a contrast to
+  reversal — the answer does not depend on token position at all
+  (shuffling the input would not change the correct answer).
+
+Using two tasks with different positional dependence, rather than one, was
+a deliberate design choice to test whether conclusions about positional
+encoding schemes generalize across task types or are task-specific.
+
+## Methodology revision: single-length vs. range-based training
+
+Experiment 1 trained on a single fixed sequence length (6) only. An early
+version of Experiment 2 mirrored this setup, but verification (checking
+accuracy at lengths shorter than the trained length, which should be
+"easy" if generalization were general rather than length-specific) revealed
+accuracy peaked sharply at exactly length 6 and degraded in both
+directions — indicating the model had overfit to one specific length
+rather than learning a length-invariant mechanism at all.
+
+**Revision**: Experiment 2 was rebuilt to train on a *range* of lengths
+(3-6) rather than a single fixed length, with sequence length randomized
+per training batch. This isolates genuine extrapolation (performance
+beyond the entire trained range) from single-length overfitting (failure
+even on lengths close to, but not exactly equal to, one memorized value).
+This is closer to standard practice in the length-generalization
+literature, which typically trains on a length range and tests beyond its
+upper bound.
+
+This inconsistency between Experiment 1 (fixed length) and Experiment 2
+(range-based, after revision) is noted explicitly as a limitation — a
+consistent range-based setup across both experiments would strengthen a
+follow-up version of this work, but was not retrofitted into Experiment 1
+given time constraints and that Experiment 1's results remain valid and
+informative as reported.
+
+## Verification practices used
+
+Before trusting any "it doesn't work" result as a genuine finding rather
+than a bug, checked:
+- Whether the model performed well at the trained length/range before
+  concluding anything about lengths beyond it.
+- Whether failure patterns were explainable (e.g. NoPE's inability to learn
+  reversal follows directly from the task's positional dependence; the
+  counting model's bias toward small predicted counts at long lengths
+  matches the count distribution seen during training) rather than
+  resembling arbitrary or inconsistent breakage.
+- Whether results were directionally consistent with published findings on
+  the same general phenomenon, without assuming the literature must be
+  reproduced exactly at this small scale.
+
+## Results summary
+
+See `RESULTS_PART_B.md` for full tables and per-experiment analysis.
+Headline finding: both *whether* positional encoding is necessary, and
+*which* encoding scheme generalizes best, are task-dependent — NoPE failed
+completely on reversal but partially succeeded on counting; sinusoidal and
+learned PE tied on reversal but learned PE clearly outperformed sinusoidal
+on counting. No scheme achieved robust generalization to substantially
+longer sequences on either task.
+
+## Related work
+
+- Vaswani et al., "Attention Is All You Need" (2017) — original
+  Transformer architecture and sinusoidal positional encoding.
+- Press, Smith & Lewis, "Train Short, Test Long: Attention with Linear
+  Biases Enables Input Length Extrapolation" (ICLR 2022) — introduces
+  ALiBi, defines this research area.
+- "The Impact of Positional Encoding on Length Generalization in
+  Transformers" (NeurIPS 2023) — systematic comparison of PE schemes
+  (APE, T5 Relative PE, ALiBi, RoPE, NoPE) on reasoning/math tasks; found
+  NoPE outperforms explicit schemes. This project's finding that NoPE
+  cannot even learn a strongly positional task (reversal) suggests their
+  conclusion may not extend to tasks where position is load-bearing to the
+  task definition itself, rather than incidental to it.
+- Ruoss et al., "Randomized Positional Encodings Boost Length
+  Generalization of Transformers" (ACL 2023) — proposes a fix for the
+  out-of-distribution positional signal problem, additional context for
+  future extensions of this work.
+
+## Engineering practices
+
+- Git version control, incremental commits per experiment/revision.
+- `RESULTS_PART_B.md` maintained as the experiment log, updated after each
+  major result (mirroring the practice established in Part A).
+- Shared architecture code factored into `model_utils.py` to support
+  multiple experiment notebooks without duplication.
