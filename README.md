@@ -53,7 +53,7 @@ range-based training, and complete results tables.
 - `part2_transformer_experiment1_reversal.ipynb`
 - `part2_transformer_experiment2_counting.ipynb`
 - `model_utils.py` — shared Transformer architecture components imported
-  by both experiment notebooks
+  by both experiment notebooks.
 
 ## Paper
 
